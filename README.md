@@ -2,7 +2,7 @@
 
 [![Omarchy Quattro](https://img.shields.io/badge/Omarchy-Quattro-111111)](https://omarchy.org)
 <a href="https://github.com/tcballard/omarchy-badges"><img src="https://raw.githubusercontent.com/tcballard/omarchy-badges/75975e5b5bf75e7ede3764bcd2950046f7abfe2c/badges/v1/omarchy-plugin.svg" height="20" alt="Built for Omarchy: Plugin"></a>
-[![License: MIT](https://img.shields.io/github/license/mscurtescu/omarchy-island-bar)](LICENSE)
+[![License: MIT](https://img.shields.io/github/license/TMartinPPC/omarchy-island-bar)](LICENSE)
 
 [Changelog](CHANGELOG.md) · [Development](DEVELOPMENT.md)
 
@@ -18,7 +18,9 @@ This is the Quattro equivalent of the old Waybar pattern: transparent
 
 Inspired by [Pillbar](https://github.com/fillmefab4/Pillbar).
 
-Plugin id: `mscurtescu.island-bar`
+Plugin id: `tmartinppc.island-bar`
+
+This is the maintained fork of [mscurtescu's island bar](https://github.com/mscurtescu/omarchy-island-bar), which is no longer updated. The plugin id carried upstream's name until 1.3.0; switching from upstream keeps the bar layout in `shell.json`, and the plugin manager rewrites `bar.id` on enable.
 
 ## Transparency
 
@@ -66,7 +68,7 @@ plugin service once the host completes bar-entry facades
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/mscurtescu/omarchy-island-bar.git --enable
+omarchy plugin add https://github.com/TMartinPPC/omarchy-island-bar.git --enable
 ```
 
 Or **Setup → Plugins → Add Plugin**, paste the git URL, and enable when asked.
@@ -82,7 +84,7 @@ Or **Setup → Plugins → Enable Plugin** and choose **Bar**.
 ## Uninstall
 
 ```bash
-omarchy plugin remove mscurtescu.island-bar
+omarchy plugin remove tmartinppc.island-bar
 ```
 
 Or **Setup → Plugins → Remove Plugin** and choose **Island Bar**.

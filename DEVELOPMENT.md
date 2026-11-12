@@ -8,9 +8,9 @@ symlinks inside plugin folders.
 
 ```bash
 rsync -a --delete --exclude '.git' --exclude '.gitignore' \
-  ./ ~/.config/omarchy/plugins/mscurtescu.island-bar/
-omarchy plugin validate ~/.config/omarchy/plugins/mscurtescu.island-bar
-omarchy bar use mscurtescu.island-bar
+  ./ ~/.config/omarchy/plugins/tmartinppc.island-bar/
+omarchy plugin validate ~/.config/omarchy/plugins/tmartinppc.island-bar
+omarchy bar use tmartinppc.island-bar
 omarchy restart shell
 ```
 

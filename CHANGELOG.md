@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to [Island Bar](https://github.com/mscurtescu/omarchy-island-bar)
+All notable changes to [Island Bar](https://github.com/TMartinPPC/omarchy-island-bar)
 are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
@@ -51,6 +51,12 @@ version string.
 
 ### Changed
 
+- Plugin id is now `tmartinppc.island-bar` (was `mscurtescu.island-bar`):
+  upstream is unmaintained and this fork is the maintained version. Install
+  from `https://github.com/TMartinPPC/omarchy-island-bar.git`; switching
+  from upstream keeps the bar layout in `shell.json` — only `bar.id`
+  changes, and the plugin manager writes it on `--enable`.
+
 - Widgets hosted under island-bar no longer see other widgets' popouts as
   their own: `activePopout` and `clickTargets` on the facade are scoped to
   the widget that created them, with a foreign marker for everyone else
@@ -88,6 +94,6 @@ root directly, exactly as in 1.1.0.
 - README install/remove, copy-install notes (Omarchy rejects plugin-folder
   symlinks), screenshot, and badges.
 
-[Unreleased]: https://github.com/mscurtescu/omarchy-island-bar/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/mscurtescu/omarchy-island-bar/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/mscurtescu/omarchy-island-bar/releases/tag/v1.0.0
+[Unreleased]: https://github.com/TMartinPPC/omarchy-island-bar/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/TMartinPPC/omarchy-island-bar/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/TMartinPPC/omarchy-island-bar/releases/tag/v1.0.0

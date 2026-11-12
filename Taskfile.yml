@@ -34,7 +34,7 @@ tasks:
   sync:
     desc: Copy this repo into the live Omarchy plugin directory
     cmds:
-      - rsync -a --delete --exclude '.git' --exclude '.gitignore' ./ ~/.config/omarchy/plugins/mscurtescu.island-bar/
+      - rsync -a --delete --exclude '.git' --exclude '.gitignore' ./ ~/.config/omarchy/plugins/tmartinppc.island-bar/
 
   restart:
     desc: Restart the Omarchy shell
@@ -51,7 +51,7 @@ tasks:
   plugin:use:
     desc: Use Island Bar as the active bar
     cmds:
-      - omarchy bar use mscurtescu.island-bar
+      - omarchy bar use tmartinppc.island-bar
 
   plugin:reset:
     desc: Switch back to the stock Omarchy bar
@@ -61,7 +61,7 @@ tasks:
   plugin:uninstall:
     desc: Remove Island Bar and restore the stock bar
     cmds:
-      - omarchy plugin remove mscurtescu.island-bar
+      - omarchy plugin remove tmartinppc.island-bar
 
   bd:ready:
     desc: List Beads issues with no open blockers
