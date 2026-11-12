@@ -48,11 +48,19 @@ Widget-level 4.5 features travel with the widgets themselves and work under
 island-bar: scrolling the workspaces island, per-monitor workspaces, and the
 clock's seconds format (set the format on the widget entry in `shell.json`).
 
-What 4.5's first-party bar has that island-bar does not: hosting widgets
-inside the tray's drawer, the new drag-to-rearrange arrangement UX (island-bar
-keeps its own drag-rearrange from 4.0.2), and 4.5's cross-widget icon metrics.
-The bar remains a third-party host, so a widget's `bar.shell.serviceFor()`
-resolves its own plugin service once the host completes bar-entry facades
+4.5 layout sections work too. `centerBegin` and `centerEnd` entries join the
+center island around the center section, as the stock bar's center box holds
+them, and `tray` entries are hosted inside the tray widget's drawer: they
+draw in the drawer, open panels from it (which hold the drawer open), and
+can be dropped in and out of it while rearranging, as on the stock bar.
+Slots hand widgets their stock fixed edge — `start` for the left island,
+`end` for the right — so drawer and panel placement match the stock bar.
+
+What 4.5's first-party bar has that island-bar does not: the new
+drag-to-rearrange arrangement UX (island-bar keeps its own drag-rearrange
+from 4.0.2) and 4.5's cross-widget icon metrics. The bar remains a
+third-party host, so a widget's `bar.shell.serviceFor()` resolves its own
+plugin service once the host completes bar-entry facades
 ([omacom/omarchy#13194](https://github.com/omacom/omarchy/pull/13194)).
 
 ## Install

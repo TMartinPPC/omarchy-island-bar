@@ -7,3 +7,9 @@ Bar.qml) is ported from omarchy 4.5.0-rc1
 (/usr/share/omarchy/shell/plugins/bar/Bar.qml and shell/Ui/PluginBarApi.qml
 at tag v4.5.0-rc1), adapted to island-bar's slot model and gated to 4.5
 hosts only.
+
+The 4.5 tray-section behaviour is ported the same way: widgets in the tray
+layout section are hosted in the tray widget's drawer (Bar.qml's
+traySectionComponent and the tray-host plumbing on ModuleSlot), the drawer
+drop zone is BarModel.sectionDropZone, and centerBegin/centerEnd entries
+join the center island where the stock bar's center box holds them.

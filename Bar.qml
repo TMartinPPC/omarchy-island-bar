@@ -38,7 +38,7 @@ Item {
     position: "top",
     transparent: false,
     centerAnchor: "omarchy.clock",
-    layout: { left: [], center: [], right: [] }
+    layout: { left: [], centerBegin: [], center: [], centerEnd: [], right: [], tray: [] }
   })
   property var layoutConfig: fallbackBarConfig.layout
   property string centerAnchor: ""
@@ -82,6 +82,10 @@ Item {
   property bool tooltipShown: false
   property int tooltipRequest: 0
   property var activePopout: null
+  // A drag resolved onto the tray's drawer section itself: an empty section
+  // takes the widget whole, so there is no target slot for it. Slot drops
+  // inside the section stay on barDragTarget like any other region.
+  property bool barDragTrayRegion: false
   property var barDragSource: null
   property var barDragTarget: null
   property var barDragTargetGeometry: null
@@ -192,6 +196,7 @@ Item {
     barDragTarget = null
     barDragTargetGeometry = null
     barDragAfter = false
+    barDragTrayRegion = false
     barDragSceneX = 0
     barDragSceneY = 0
     barDragScreenX = 0
@@ -325,6 +330,22 @@ Item {
 
   function releasePopout(owner) {
     if (activePopout === owner) activePopout = null
+  }
+
+  // A widget is being dragged that could go into the tray section, so the
+  // tray's drawer opens to show where. The tray itself (a widget hosting
+  // the section) travels with its drawer, so it never opens one.
+  readonly property bool traySectionDragActive: !!barDragSource && !barDragSource.hostsTraySection
+  // An open panel from a widget in the tray section keeps the tray's drawer
+  // open, so the panel's widget stays on screen under it.
+  readonly property bool traySectionPopoutOpen: {
+    var owner = activePopout
+    if (!owner) return false
+    for (var i = 0; i < moduleSlots.length; i++) {
+      var slot = moduleSlots[i]
+      if (slot && slot.activeItem === owner) return slot.region === "tray"
+    }
+    return false
   }
 
   // --- Per-widget bar facades (Omarchy 4.5 hosting contract) ---------------
@@ -583,10 +604,12 @@ Item {
     // island-bar's own surface: the widget registry and island geometry.
     api.barWidgetRegistry = Qt.binding(function() { return root.barWidgetRegistry })
     api.islandInset = Qt.binding(function() { return root.islandInset })
-    // traySectionDragActive and traySectionPopoutOpen stay at their defaults:
-    // island-bar has no tray-section drag UX of its own. popupOpen stays
-    // false (its default) because the bar root has no such member today, so
-    // hosted widgets have never seen one.
+    // Tray-section state: a drag that could enter the drawer, and a panel
+    // open from a widget hosted in it. popupOpen stays false (its default)
+    // because the bar root has no such member today, so hosted widgets have
+    // never seen one.
+    api.traySectionDragActive = Qt.binding(function() { return root.traySectionDragActive })
+    api.traySectionPopoutOpen = Qt.binding(function() { return root.traySectionPopoutOpen })
     syncPluginBarApiObjects(api)
   }
 
@@ -621,12 +644,19 @@ Item {
 
   // Apply tray-pinning on top of the shared layout normalization so the
   // bar host and scriptable config helpers can't drift on entry shape.
+  // All six host sections are kept: tray entries are hosted inside the
+  // tray's drawer (below), and centerBegin/centerEnd entries join the
+  // center island around the center section, as the stock 4.5 bar's center
+  // box holds them.
   function normalizeLayout(layout) {
     var normalized = Util.normalizeLayout(Util.isPlainObject(layout) ? layout : fallbackBarConfig.layout)
     return {
-      left:   pinTrayToInner(normalized.left,   "left"),
-      center: pinTrayToInner(normalized.center, "center"),
-      right:  pinTrayToInner(normalized.right,  "right")
+      left:        pinTrayToInner(normalized.left, "left"),
+      centerBegin: normalized.centerBegin,
+      center:      pinTrayToInner(normalized.center, "center"),
+      centerEnd:   normalized.centerEnd,
+      right:       pinTrayToInner(normalized.right, "right"),
+      tray:        normalized.tray
     }
   }
 
@@ -975,11 +1005,37 @@ Item {
         return null
     }
 
+    // The tray cannot go into its own drawer: a source hosting the section
+    // travels with it, so the drawer is not a drop target for it.
+    var intoTraySection = !sourceSlot || !sourceSlot.hostsTraySection
+    var traySlot = null
+    var trayCandidates = []
     var candidates = []
     for (var i = 0; i < moduleSlots.length; i++) {
       var slot = moduleSlots[i]
       if (!slot || slot === sourceSlot || !slot.visible || slot.width <= 0 || slot.height <= 0) continue
       if (sourceWindow && !root.sameWindow(root.slotWindow(slot), sourceWindow)) continue
+
+      if (slot.region === "tray") {
+        // Drawer widgets are reached through the drawer's own zone below,
+        // never as generic neighbours on the bar.
+        if (intoTraySection) {
+          var drawerPoint = { x: slot.x, y: slot.y }
+          try {
+            drawerPoint = slot.mapToItem(null, 0, 0)
+          } catch (e) {
+          }
+          trayCandidates.push({
+            slot: slot,
+            x: drawerPoint.x,
+            y: drawerPoint.y,
+            width: slot.width,
+            height: slot.height
+          })
+        }
+        continue
+      }
+      if (intoTraySection && slot.hostsTraySection && !traySlot) traySlot = slot
 
       var slotPoint = { x: slot.x, y: slot.y }
       try {
@@ -996,7 +1052,71 @@ Item {
       })
     }
 
+    // The tray's drawer section: over it, a drop lands among the widgets in
+    // it, or at its end when it holds none; off it they are out of reach.
+    var zone = root.traySectionDropZone(traySlot, sourceWindow)
+    var trayDrop = BarModel.traySectionDrop(trayCandidates, zone, scenePoint, root.vertical)
+    if (trayDrop) {
+      if (!trayDrop.slot) trayDrop.marker = root.traySectionMarkerRect(zone)
+      return trayDrop
+    }
+
     return BarModel.nearestDropTarget(candidates, scenePoint, root.vertical)
+  }
+
+  // Where the tray's drawer section sits in the bar window's scene, grown
+  // by half the bar's thickness either way (BarModel.sectionDropZone), or
+  // null while no tray on this surface hosts it. Scene coordinates, as
+  // drop matching reads the pointer; the ghost's marker maps it to screen.
+  function traySectionDropZone(traySlot, window) {
+    if (!traySlot || !traySlot.hostsTraySection || !traySlot.activeItem) return null
+    var area = traySlot.activeItem.sectionHost
+    if (!area || !area.visible || area.width <= 0 || area.height <= 0) return null
+    try {
+      var origin = area.mapToItem(null, 0, 0)
+      var section = { x: origin.x, y: origin.y, width: area.width, height: area.height }
+      var slotPoint = { x: traySlot.x, y: traySlot.y }
+      try {
+        slotPoint = traySlot.mapToItem(null, 0, 0)
+      } catch (e) {
+      }
+      var tray = { x: slotPoint.x, y: slotPoint.y, width: traySlot.width, height: traySlot.height }
+      return BarModel.sectionDropZone(section, root.barSize, root.vertical, tray)
+    } catch (e) {
+      return null
+    }
+  }
+
+  // The drawer zone as the drag ghost draws it: a marker rectangle in
+  // screen coordinates, or null off the zone.
+  function traySectionMarkerRect(zone) {
+    if (!zone) return null
+    var origin = root.barDragScreenPoint({ x: zone.x, y: zone.y })
+    return { x: origin.x, y: origin.y, width: zone.width, height: zone.height }
+  }
+
+  // The first slot on a bar surface whose widget hosts the tray section. A
+  // tray cloned beside the original would otherwise draw the section's
+  // widgets twice on one surface.
+  function isPrimaryTrayHost(slot) {
+    for (var i = 0; i < moduleSlots.length; i++) {
+      var other = moduleSlots[i]
+      if (other === slot) return true
+      if (other && other.trayHostCandidate && root.sameWindow(root.slotWindow(other), root.slotWindow(slot))) return false
+    }
+    return true
+  }
+
+  // The edge tray-drawer widgets grow from: the side the tray anchors its
+  // drawer by, which the tray widget derives from its own fixed edge. Every
+  // tray derives the same one, so one value serves them all.
+  readonly property string traySectionFixedEdge: {
+    for (var i = 0; i < moduleSlots.length; i++) {
+      var slot = moduleSlots[i]
+      if (slot && slot.trayHostCandidate && slot.activeItem && "sectionEdge" in slot.activeItem)
+        return String(slot.activeItem.sectionEdge)
+    }
+    return "center"
   }
 
   function visibleModuleSlot(region, name, sourceSlot) {
@@ -1530,6 +1650,19 @@ Item {
 
   Component { id: emptyModuleComponent; Item { implicitWidth: 0; implicitHeight: 0; visible: false } }
 
+  // The tray section's list, which the tray's slot draws inside the tray's
+  // drawer: ordinary module slots of the tray region, hosting out of the
+  // widget registry with the same per-widget facades as bar widgets.
+  Component {
+    id: traySectionComponent
+
+    ModuleList {
+      entries: root.layoutEntries("tray")
+      region: "tray"
+      fixedEdge: root.traySectionFixedEdge
+    }
+  }
+
   component DragGhostPanel: PanelWindow {
     id: ghostWindow
 
@@ -1667,11 +1800,15 @@ Item {
   component LeftModules: ModuleList {
     entries: root.layoutEntries("left")
     region: "left"
+    // Vertical bars keep island-bar's neutral edge; its sections have no
+    // horizontal growth edge to hand a widget.
+    fixedEdge: root.vertical ? "center" : "start"
   }
 
   component RightModules: ModuleList {
     entries: root.layoutEntries("right")
     region: "right"
+    fixedEdge: root.vertical ? "center" : "end"
   }
 
   component CenterModules: Item {
@@ -1706,9 +1843,11 @@ Item {
             left = Math.min(left, item.x)
           }
           acc(unanchoredList)
+          acc(centerBeginList)
           acc(beforeList)
           acc(centerAnchorModule)
           acc(afterList)
+          acc(centerEndList)
           return isFinite(left) ? left : 0
         }
         readonly property real islandRight: {
@@ -1718,9 +1857,11 @@ Item {
             right = Math.max(right, item.x + item.width)
           }
           acc(unanchoredList)
+          acc(centerBeginList)
           acc(beforeList)
           acc(centerAnchorModule)
           acc(afterList)
+          acc(centerEndList)
           return isFinite(right) ? right : 0
         }
 
@@ -1739,6 +1880,16 @@ Item {
           entries: centerRoot.entries
           region: "center"
           anchors.centerIn: parent
+        }
+
+        // centerBegin and centerEnd hang off the center section's outer
+        // edges, as the stock 4.5 center box holds them.
+        ModuleList {
+          id: centerBeginList
+          entries: root.layoutEntries("centerBegin")
+          region: "centerBegin"
+          anchors.right: centerRoot.hasAnchor ? beforeList.left : unanchoredList.left
+          anchors.verticalCenter: centerRoot.hasAnchor ? beforeList.verticalCenter : unanchoredList.verticalCenter
         }
 
         ModuleList {
@@ -1766,6 +1917,14 @@ Item {
           anchors.left: centerAnchorModule.right
           anchors.verticalCenter: centerAnchorModule.verticalCenter
         }
+
+        ModuleList {
+          id: centerEndList
+          entries: root.layoutEntries("centerEnd")
+          region: "centerEnd"
+          anchors.left: centerRoot.hasAnchor ? afterList.right : unanchoredList.right
+          anchors.verticalCenter: centerRoot.hasAnchor ? afterList.verticalCenter : unanchoredList.verticalCenter
+        }
       }
     }
 
@@ -1789,9 +1948,11 @@ Item {
             top = Math.min(top, item.y)
           }
           acc(unanchoredListV)
+          acc(centerBeginListV)
           acc(beforeListV)
           acc(centerAnchorModuleV)
           acc(afterListV)
+          acc(centerEndListV)
           return isFinite(top) ? top : 0
         }
         readonly property real islandBottom: {
@@ -1801,9 +1962,11 @@ Item {
             bottom = Math.max(bottom, item.y + item.height)
           }
           acc(unanchoredListV)
+          acc(centerBeginListV)
           acc(beforeListV)
           acc(centerAnchorModuleV)
           acc(afterListV)
+          acc(centerEndListV)
           return isFinite(bottom) ? bottom : 0
         }
 
@@ -1822,6 +1985,14 @@ Item {
           entries: centerRoot.entries
           region: "center"
           anchors.centerIn: parent
+        }
+
+        ModuleList {
+          id: centerBeginListV
+          entries: root.layoutEntries("centerBegin")
+          region: "centerBegin"
+          anchors.bottom: centerRoot.hasAnchor ? beforeListV.top : unanchoredListV.top
+          anchors.horizontalCenter: centerRoot.hasAnchor ? beforeListV.horizontalCenter : unanchoredListV.horizontalCenter
         }
 
         ModuleList {
@@ -1848,6 +2019,14 @@ Item {
           region: "center"
           anchors.top: centerAnchorModuleV.bottom
           anchors.horizontalCenter: centerAnchorModuleV.horizontalCenter
+        }
+
+        ModuleList {
+          id: centerEndListV
+          entries: root.layoutEntries("centerEnd")
+          region: "centerEnd"
+          anchors.top: centerRoot.hasAnchor ? afterListV.bottom : unanchoredListV.bottom
+          anchors.horizontalCenter: centerRoot.hasAnchor ? afterListV.horizontalCenter : unanchoredListV.horizontalCenter
         }
       }
     }
@@ -1940,6 +2119,11 @@ Item {
 
     property var entries: []
     property string region: ""
+    // The edge this list's widgets grow from (stock 4.5 fixed-edge
+    // contract), handed to each slot. Islands anchor lists by their own
+    // edges: the left island grows from its start, the right one from its
+    // end, and a centered list from its middle.
+    property string fixedEdge: "center"
 
     visible: entries.length > 0
     // A hidden list must not build its modules. The center section declares
@@ -1965,6 +2149,7 @@ Item {
             required property var modelData
             entry: modelData
             region: moduleListRoot.region
+            fixedEdge: moduleListRoot.fixedEdge
           }
         }
       }
@@ -1983,6 +2168,7 @@ Item {
             required property var modelData
             entry: modelData
             region: moduleListRoot.region
+            fixedEdge: moduleListRoot.fixedEdge
           }
         }
       }
@@ -2018,9 +2204,10 @@ Item {
     // installed third-party widgets get the per-widget facade.
     readonly property bool firstParty: !!registryMetadata && registryMetadata.firstParty === true
     readonly property string pluginApiId: registered ? root.canonicalWidgetId(moduleName) : "bar-entry:" + moduleName
-    // The edge a widget's section grows from (stock 4.5 contract). Island
-    // slots have no growth-anchoring of their own; "center" is what hosted
-    // widgets have always seen here.
+    // The edge a widget's section grows from (stock 4.5 contract), handed
+    // down by the module list the slot sits in: islands anchor their lists
+    // by their own edges, so a hosted widget learns the same edge it would
+    // see on the stock bar.
     property string fixedEdge: "center"
     readonly property bool qmlCustom: customType === "qml"
     readonly property bool commandCustom: customType === "command"
@@ -2033,6 +2220,22 @@ Item {
     readonly property bool hovered: moduleHover.hovered
     readonly property bool dragSource: root.barDragSource === slot
     readonly property bool panelOpen: root.activePopout === slot.activeItem
+    // The tray, or a clone of it, hosts the tray section in its drawer; one
+    // inside the drawer does not, so the section never holds itself.
+    readonly property bool trayHostCandidate: region !== "tray" && !!activeItem && "sectionHost" in activeItem
+    readonly property bool hostsTraySection: trayHostCandidate && root.isPrimaryTrayHost(slot)
+    // Its drawer section is outlined while a widget that could go in it is
+    // dragged on this bar.
+    readonly property bool traySectionShown: hostsTraySection && root.traySectionDragActive
+      && root.sameWindow(root.barDragWindow, root.slotWindow(slot))
+    // The part of the section the drawer shows, in the slot's coordinates —
+    // the tray widget fills its slot — or null while it shows none of it.
+    readonly property var traySectionGeometry: {
+      if (!hostsTraySection || !activeItem) return null
+      var shown = "sectionShown" in activeItem ? activeItem.sectionShown : null
+      if (!shown) return null
+      return { x: shown.x, y: shown.y, width: shown.width, height: shown.height }
+    }
     // Modules bigger than the mark they want (a text label in a padded slot,
     // a multi-line stack on a vertical bar) can say how long the open-panel
     // dot should be along the bar, so it tracks what the module paints
@@ -2106,6 +2309,39 @@ Item {
       }
     }
 
+    // The tray section's widgets, drawn inside the tray's drawer. They are
+    // ordinary module slots of their own region, so they get the same
+    // hosting contract (per-widget facades, panels, settings) as widgets on
+    // the bar. Built through a Component outside ModuleSlot: a module list
+    // holds module slots, so one declared in here would make the types a
+    // cycle.
+    Loader {
+      id: traySectionLoader
+      readonly property Item sectionHost: slot.hostsTraySection ? slot.activeItem.sectionHost : null
+      parent: sectionHost || slot
+      active: !!sectionHost
+      sourceComponent: traySectionComponent
+    }
+
+    // The tray section's outline while a widget that could go in it is
+    // dragged on this bar: around the part of the drawer section that
+    // shows, as the stock bar outlines its center box. Drawn over the tray
+    // rather than in its drawer, whose clip would hide an empty section's
+    // outline.
+    BorderSurface {
+      readonly property var section: slot.traySectionGeometry || { x: 0, y: 0, width: 0, height: 0 }
+
+      visible: slot.traySectionShown && !!slot.traySectionGeometry
+      x: section.x
+      y: section.y
+      width: section.width
+      height: section.height
+      color: root.transparent ? "transparent" : root.background
+      borderSpec: Border.flat(Color.accent, 1)
+      radius: Math.min(Style.cornerRadius, height / 2)
+      z: 40
+    }
+
     Rectangle {
       id: openPanelIndicator
 
@@ -2154,6 +2390,13 @@ Item {
       // make neighboring modules overlap after a small aborted drag.
 
       onPressed: function(mouse) {
+        // A press on a widget in the tray's drawer belongs to that widget's
+        // own slot, underneath this one, so it drags that widget, not the
+        // tray.
+        if (slot.traySectionContains(mouse.x, mouse.y)) {
+          mouse.accepted = false
+          return
+        }
         dragging = false
         suppressClick = false
         pressedX = mouse.x
@@ -2187,9 +2430,12 @@ Item {
           root.barDragScreenY = screenPoint.y
 
           var drop = root.moduleDropAtScene(scenePoint, slot)
-          root.barDragTarget = drop ? drop.slot : null
-          root.barDragAfter = drop ? drop.after : false
-          root.barDragTargetGeometry = drop ? root.dropMarkerRect(drop.slot, drop.after) : null
+          root.barDragTarget = drop && drop.slot ? drop.slot : null
+          root.barDragAfter = !!(drop && drop.slot && drop.after)
+          root.barDragTrayRegion = !!drop && drop.region === "tray"
+          root.barDragTargetGeometry = drop
+            ? (drop.slot ? root.dropMarkerRect(drop.slot, drop.after) : (drop.marker || null))
+            : null
         }
       }
 
@@ -2197,6 +2443,7 @@ Item {
         var wasDragging = dragging
         var targetSlot = root.barDragTarget
         var afterTarget = root.barDragAfter
+        var trayRegionDrop = root.barDragTrayRegion
 
         if (wasDragging) suppressClick = true
 
@@ -2205,6 +2452,10 @@ Item {
 
         if (wasDragging && targetSlot) {
           root.dropBarModuleAtTarget(slot, targetSlot, afterTarget)
+          mouse.accepted = true
+        } else if (wasDragging && trayRegionDrop) {
+          // An empty drawer section takes the widget whole.
+          root.dropBarModule(slot, "tray", "")
           mouse.accepted = true
         } else if (!wasDragging) {
           mouse.accepted = false
@@ -2230,6 +2481,15 @@ Item {
 
     onActiveItemChanged: Qt.callLater(injectProps)
     onModuleSettingsChanged: injectProps()
+
+    // Whether a press at the slot's own coordinates lands on the tray
+    // section hosted in the widget's drawer rather than on the widget.
+    function traySectionContains(x, y) {
+      var area = slot.hostsTraySection ? slot.activeItem.sectionHost : null
+      if (!area || !area.visible || area.width <= 0 || area.height <= 0) return false
+      var point = slot.mapToItem(area, x, y)
+      return point.x >= 0 && point.y >= 0 && point.x <= area.width && point.y <= area.height
+    }
 
     function injectProps() {
       var target = activeItem

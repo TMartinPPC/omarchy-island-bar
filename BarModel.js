@@ -75,7 +75,7 @@ function entriesAfter(entries, name) {
 // a duplicated id makes the push ambiguous.
 function inlineSettingsDelta(current, next) {
   if (!isPlainObject(current) || !isPlainObject(next)) return null
-  var regions = ["left", "center", "right"]
+  var regions = ["left", "centerBegin", "center", "centerEnd", "right", "tray"]
   var counts = {}
   for (var r = 0; r < regions.length; r++) {
     var entries = Array.isArray(next[regions[r]]) ? next[regions[r]] : []
@@ -208,6 +208,53 @@ function nearestDropTarget(candidates, point, vertical) {
   return best
 }
 
+// The stretch of the bar over which a drop lands in the tray's drawer
+// section ({ x, y, width, height }): the section and half of `reach`, the
+// bar's thickness, past either end of it, so an empty section, which takes
+// no room, is hit across the bar's thickness. The section grows from one
+// end as room opens in it, and the stretch with it, so it always covers
+// where it reached before. It stops that same half short of the tray's own
+// ends (`tray`, where given), so a drop there lands beside the tray even
+// where the section reaches them, with no pinned icons between. Ported
+// from the stock 4.5 bar's BarModel for island-bar's tray-section drops.
+function sectionDropZone(section, reach, vertical, tray) {
+  if (!section) return null
+  var pad = (Number(reach) || 0) / 2
+  var start = (vertical ? section.y : section.x) - pad
+  var end = (vertical ? section.y + section.height : section.x + section.width) + pad
+  if (tray) {
+    var low = (vertical ? tray.y : tray.x) + pad
+    var high = Math.max(low, (vertical ? tray.y + tray.height : tray.x + tray.width) - pad)
+    if (start < low) {
+      start = low
+      end = Math.max(end, Math.min(low + pad * 2, high))
+    }
+    if (end > high) {
+      end = high
+      start = Math.max(low, Math.min(start, high - pad * 2))
+    }
+  }
+  return vertical
+    ? { x: section.x, y: start, width: section.width, height: end - start }
+    : { x: start, y: section.y, width: end - start, height: section.height }
+}
+
+// A drop over the tray's drawer section: null while the pointer is off the
+// `zone` (sectionDropZone), otherwise the nearest of the section's own slot
+// `rows` (BarModel.nearestDropTarget over tray-region slots), or the
+// section's end when it holds none, as { region: "tray", after: true } —
+// an empty section takes the widget whole.
+function traySectionDrop(rows, zone, point, vertical) {
+  if (!zone) return null
+  var axis = vertical ? Number(point && point.y) : Number(point && point.x)
+  var start = Number(vertical ? zone.y : zone.x)
+  var end = start + Number(vertical ? zone.height : zone.width)
+  if (!isFinite(axis) || axis < start || axis > end) return null
+
+  var nearest = nearestDropTarget(rows, point, vertical)
+  return nearest || { region: "tray", after: true }
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     isDrawnSlot: isDrawnSlot,
@@ -226,6 +273,8 @@ if (typeof module !== "undefined") {
     expandPath: expandPath,
     customModuleSafeName: customModuleSafeName,
     customModuleType: customModuleType,
-    customModulePath: customModulePath
+    customModulePath: customModulePath,
+    sectionDropZone: sectionDropZone,
+    traySectionDrop: traySectionDrop
   }
 }

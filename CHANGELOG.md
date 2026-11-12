@@ -12,6 +12,28 @@ version string.
 
 ### Added
 
+- Tray-section hosting on Omarchy 4.5: widgets whose layout entry sits in
+  `bar.layout.tray` are hosted inside the tray widget's drawer. They are
+  ordinary module slots of the tray region, so they get the same per-widget
+  facade as bar widgets, open panels from the drawer (an open panel holds
+  the drawer open), and can be dropped into the drawer and dragged back out
+  while rearranging. With several trays on one surface, the first one hosts
+  the section, as the stock bar's widget pool hands it to a single slot.
+- `centerBegin` and `centerEnd` layout sections on the center island: their
+  entries join the center section as the stock 4.5 bar's center box holds
+  them, so indicators, weather and friends placed there by 4.5 render
+  instead of silently dropping off the bar.
+- Stock 4.5 fixed-edge semantics: slots hand widgets the edge their section
+  grows from (`start` for the left island, `end` for the right, `center` in
+  the middle and on vertical bars), so drawer direction and panel placement
+  match the stock bar. `normalizeLayout` now keeps all six host sections —
+  which also lets the tray widget see `bar.layoutConfig.tray` and count the
+  widgets in its drawer, and stops the tray from showing an app icon for a
+  widget island-bar hosts (TrayModel's owned-by-omarchy check reads the
+  whole layout).
+
+### Changed
+
 - Omarchy 4.5 hosting contract: hosted third-party widgets now receive a
   per-widget bar API facade (`IslandPluginBarApi.qml`) mirroring the stock 4.5
   bar — presentation state (foreground, bar foreground, background, urgent,

@@ -86,6 +86,30 @@ test("inlineSettingsDelta rejects custom modules and duplicate ids", () => {
   assert.strictEqual(BarModel.inlineSettingsDelta(curDup, nextDup), null)
 })
 
+test("inlineSettingsDelta covers centerBegin, centerEnd and tray", () => {
+  const current = {
+    left: [], centerBegin: [{ id: "omarchy.indicators" }], center: [],
+    centerEnd: [{ id: "omarchy.weather", unit: "C" }], right: [],
+    tray: [{ id: "superwhisper.panel", visible: true }]
+  }
+  const next = {
+    left: [], centerBegin: [{ id: "omarchy.indicators", hidden: ["dropbox"] }], center: [],
+    centerEnd: [{ id: "omarchy.weather", unit: "F" }], right: [],
+    tray: [{ id: "superwhisper.panel", visible: false }]
+  }
+  const delta = BarModel.inlineSettingsDelta(current, next)
+  assert.ok(Array.isArray(delta))
+  assert.strictEqual(delta.length, 3)
+  assert.deepStrictEqual(delta.map((c) => c.region), ["centerBegin", "centerEnd", "tray"])
+  assert.strictEqual(delta.find((c) => c.region === "tray").entry.visible, false)
+})
+
+test("inlineSettingsDelta rejects structural tray changes", () => {
+  const a = { left: [], center: [], right: [], tray: ["superwhisper.panel"] }
+  const b = { left: [], center: [], right: [], tray: ["io.github.twiking.omacontrol"] }
+  assert.strictEqual(BarModel.inlineSettingsDelta(a, b), null)
+})
+
 test("pickPanelSlot prefers an opened copy, then the focused screen", () => {
   const candidates = [
     { slot: { visible: true, width: 10, height: 10 }, screenName: "DP-1", opened: false },
@@ -132,6 +156,40 @@ test("customModuleSafeName blocks traversal and absolute paths", () => {
   assert.ok(!BarModel.customModuleSafeName("../etc/passwd"))
   assert.ok(!BarModel.customModuleSafeName("/etc/passwd"))
   assert.ok(!BarModel.customModuleSafeName(""))
+})
+
+test("sectionDropZone grows the section by half the bar thickness", () => {
+  const section = { x: 100, y: 0, width: 50, height: 30 }
+  const zone = BarModel.sectionDropZone(section, 40, false, null)
+  assert.deepStrictEqual(zone, { x: 80, y: 0, width: 90, height: 30 })
+
+  const verticalZone = BarModel.sectionDropZone({ x: 0, y: 100, width: 30, height: 50 }, 40, true, null)
+  assert.deepStrictEqual(verticalZone, { x: 0, y: 80, width: 30, height: 90 })
+})
+
+test("sectionDropZone stops short of the tray's own ends", () => {
+  const section = { x: 100, y: 0, width: 50, height: 30 }
+  const tray = { x: 100, y: 0, width: 50, height: 30 }
+  const zone = BarModel.sectionDropZone(section, 40, false, tray)
+  // Half a reach (20) in from the tray's start and end: a drop beside the
+  // tray's pinned icons lands on the bar, not in the drawer.
+  assert.deepStrictEqual(zone, { x: 120, y: 0, width: 10, height: 30 })
+})
+
+test("traySectionDrop lands among the section's rows or at its end", () => {
+  const zone = { x: 120, y: 0, width: 50, height: 30 }
+  const rows = [
+    { slot: "a", x: 120, y: 0, width: 20, height: 30 },
+    { slot: "b", x: 150, y: 0, width: 20, height: 30 }
+  ]
+  assert.deepStrictEqual(BarModel.traySectionDrop(rows, zone, { x: 138, y: 5 }, false), { slot: "a", after: true })
+  assert.deepStrictEqual(BarModel.traySectionDrop(rows, zone, { x: 162, y: 5 }, false), { slot: "b", after: true })
+  // Off the zone, the drawer widgets are out of reach.
+  assert.strictEqual(BarModel.traySectionDrop(rows, zone, { x: 40, y: 5 }, false), null)
+  // An empty section takes the widget whole.
+  assert.deepStrictEqual(BarModel.traySectionDrop([], zone, { x: 140, y: 5 }, false), { region: "tray", after: true })
+  // No tray hosting the section, no drop.
+  assert.strictEqual(BarModel.traySectionDrop(rows, null, { x: 140, y: 5 }, false), null)
 })
 
 console.log("\n" + passed + " tests passed")
